@@ -1,69 +1,57 @@
-from flask import Flask, render_template, request
-import pandas as pd
+from flask import Flask,render_template,request
 import pickle
-import logging
+import numpy as np
 
-pd.set_option('display.max_columns', None)
 app = Flask(__name__)
 
-list_of_cities = ['Algona', 'Auburn', 'Beaux Arts Village', 'Bellevue',
-       'Black Diamond', 'Bothell', 'Burien', 'Carnation', 'Clyde Hill',
-       'Covington', 'Des Moines', 'Duvall', 'Enumclaw', 'Fall City',
-       'Federal Way', 'Inglewood-Finn Hill', 'Issaquah', 'Kenmore',
-       'Kent', 'Kirkland', 'Lake Forest Park', 'Maple Valley', 'Medina',
-       'Mercer Island', 'Milton', 'Newcastle', 'Normandy Park',
-       'North Bend', 'Pacific', 'Preston', 'Ravensdale', 'Redmond',
-       'Renton', 'Sammamish', 'SeaTac', 'Seattle', 'Shoreline',
-       'Skykomish', 'Snoqualmie', 'Snoqualmie Pass', 'Tukwila', 'Vashon',
-       'Woodinville', 'Yarrow Point']
 
-cities_dict = {city: 0 for city in list_of_cities}
+scaler = pickle.load(open("Model/scaler.pkl","rb"))
+model = pickle.load(open("Model/random.pkl","rb"))
 
-# Load the trained model
-with open('trained_model','rb') as file:
-    model = pickle.load(file)
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def update_city_value(city):
-    global cities_dict
-    for c in cities_dict:
-        cities_dict[c] = 1 if c == city else 0
+# Route for homepage
 
 @app.route('/')
-def home():
-    return render_template('index.html')
+def house_price():
+    return render_template("House_price_prediction.html")
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    # Get data from the form
-    input_data = request.form.to_dict()
-    logger.info(f"Selected input data: {input_data}")
-    city = input_data['city']
-    logger.info(f"Selected city: {city}")
-    update_city_value(city)
+# Route for prediction
 
-    # Convert input data to DataFrame
-    input_df = pd.DataFrame.from_dict(input_data, orient='index').T
+@app.route('/predict',methods=["POST","GET"])
+def predict_price():
+    result=""
 
-    # Insert the binary city list to the DataFrame
-    input_df = input_df.reindex(columns=['bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'floors', 'view', 'condition', 'sqft_above', 'sqft_basement', 'yr_built'] + list_of_cities)
-    for city in list_of_cities:
-        input_df['city_' + city] = cities_dict[city]
+    bedrooms=int(request.form.get("bedrooms"))
+    bathrooms=float(request.form.get("bathrooms" ))
+    sqft_living=np.log(int(request.form.get("sqft_living")))
+    sqft_lot=np.log(int(request.form.get("sqft_lot")))
+    floors=float(request.form.get("floors"))
+    waterfront=str(request.form.get("waterfront"))
+    view= np.cbrt(int(request.form.get("view")))
+    condition= int(request.form.get("condition"))
+    sqft_basement= np.cbrt(int(request.form.get("sqft_basement")))
+    yr_built= int(request.form.get("yr_built"))
+    yr_renovated= int(request.form.get("yr_renovated" ))
+    statezip= int(request.form.get("statezip" ))
 
-    # Drop columns without prefix 'city_'
-    input_df.drop(columns=list_of_cities, inplace=True)
-    input_df.drop(columns=['city_Algona'], inplace=True)
-    logger.info(f"Preprocessed input DataFrame: {input_df}")
+    if waterfront=="Yes":
+        waterfront=1
+    elif waterfront=="No":
+        waterfront=0        
+    new_data= scaler.transform(np.array([[bedrooms, bathrooms, sqft_living,sqft_lot,
+                                        floors, waterfront, view, condition, sqft_basement,
+                                        yr_built, yr_renovated, statezip]]))
+    
+    prediction = model.predict(new_data)
+    results=np.exp(prediction)
 
-    # Make prediction
-    prediction = model.predict(input_df)
-    formatted_prediction = "%.2f" % prediction[0]
-    logger.info(f"Predicted house price: ${formatted_prediction}")
-    # Return the prediction
-    return render_template('result.html', prediction=formatted_prediction)
+    return render_template("House_price_prediction.html",result=results)
+        
+
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0',port=8080)
+
+
+['bedrooms', 'bathrooms', 'sqft_living', 'sqft_lot', 'floors',
+       'waterfront', 'view', 'condition', 'sqft_basement', 'yr_built',
+       'yr_renovated', 'statezip']
